@@ -35,6 +35,12 @@ void ainput_mouse_event(UINT64 timestamp, UINT64 flags, INT32 x, INT32 y) {
       inputs[0].mi.dwFlags = MOUSEEVENTF_MOVE;
       inputs[0].mi.dx = x;
       inputs[0].mi.dy = y;
+    } else {
+      RECT desktopRect;
+      GetClientRect(GetDesktopWindow(), &desktopRect);
+      inputs[0].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
+      inputs[0].mi.dx = MulDiv(x, 65535, desktopRect.right);
+      inputs[0].mi.dy = MulDiv(y, 65535, desktopRect.bottom);
     }
   } else if (flags & AINPUT_FLAGS_BUTTON1) {
     inputs[0].mi.dwFlags = flags & AINPUT_FLAGS_DOWN ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
