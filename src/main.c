@@ -53,6 +53,25 @@ static void handle_event(PCHAR Buffer, ULONG BufferSize, ULONG BytesRead) {
   ainput_mouse_event(d, e, f, g);
 }
 
+static BOOL IsCaptured() {
+  GUITHREADINFO guiThreadInfo;
+
+  /////
+
+  guiThreadInfo.cbSize = sizeof(GUITHREADINFO);
+
+  /////
+
+  if (!GetGUIThreadInfo(NULL, &guiThreadInfo)) {
+    printf("GetGUIThreadInfo failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+    ExitProcess(1);
+  }
+
+  /////
+
+  return guiThreadInfo.hwndCapture != NULL;
+}
+
 ///// ///// ///// ///// /////
 
 static HANDLE virtualChannel = NULL;
@@ -68,9 +87,9 @@ static DWORD WINAPI WTSVirtualChannelReadLoop(LPVOID lpParam) {
 
   while (TRUE) {
     if (virtualChannel != NULL) {
-      if (!WTSVirtualChannelRead(virtualChannel, INFINITE, buf, sizeof(buf), &out)) {
+      if (!WTSVirtualChannelRead(virtualChannel, 0, buf, sizeof(buf), &out)) {
         printf("WTSVirtualChannelRead failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-        return 1;
+        ExitProcess(1);
       }
 
       /////
@@ -91,17 +110,19 @@ int main() {
 
   if (readLoop == NULL) {
     printf("CreateThread failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-    return 1;
+    ExitProcess(1);
   }
 
   /////
 
   while (TRUE) {
-    const BOOL mouseCaptured = GetCapture() != NULL;
+    const BOOL mouseCaptured = IsCaptured();
 
     /////
 
     printf("mouseCaptured: %d\n", mouseCaptured);
+
+    /////
 
     if (mouseCaptured) {
       if (virtualChannel == NULL) {
@@ -109,16 +130,16 @@ int main() {
 
         /////
 
-        if (virtualChannel == NULL) {
+        if (newVirtualChannel == NULL) {
           printf("WTSVirtualChannelOpenEx failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-          return 1;
+          ExitProcess(1);
         }
 
         /////
 
-        if (!WTSVirtualChannelWrite(virtualChannel, MESSAGE_AINPUT_VERSION, sizeof(MESSAGE_AINPUT_VERSION), &out)) {
+        if (!WTSVirtualChannelWrite(newVirtualChannel, MESSAGE_AINPUT_VERSION, sizeof(MESSAGE_AINPUT_VERSION), &out)) {
           printf("WTSVirtualChannelWrite failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-          return 1;
+          ExitProcess(1);
         }
 
         /////
@@ -127,14 +148,18 @@ int main() {
       }
     } else {
       if (virtualChannel != NULL) {
-        if (!WTSVirtualChannelClose(virtualChannel)) {
-          printf("WTSVirtualChannelClose failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-          return 1;
-        }
+        HANDLE oldVirtualChannel = virtualChannel;
 
         /////
 
         virtualChannel = NULL;
+
+        /////
+
+        if (!WTSVirtualChannelClose(oldVirtualChannel)) {
+          printf("WTSVirtualChannelClose failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+          ExitProcess(1);
+        }
       }
     }
 
@@ -147,10 +172,6 @@ int main() {
 
   if (!TerminateThread(readLoop, 0)) {
     printf("TerminateThread failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-    return 1;
+    ExitProcess(1);
   }
-
-  /////
-
-  return 0;
 }
