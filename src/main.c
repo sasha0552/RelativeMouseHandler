@@ -53,25 +53,6 @@ static void handle_event(PCHAR Buffer, ULONG BufferSize, ULONG BytesRead) {
   ainput_mouse_event(d, e, f, g);
 }
 
-static BOOL IsCaptured() {
-  GUITHREADINFO guiThreadInfo;
-
-  /////
-
-  guiThreadInfo.cbSize = sizeof(GUITHREADINFO);
-
-  /////
-
-  if (!GetGUIThreadInfo(NULL, &guiThreadInfo)) {
-    printf("GetGUIThreadInfo failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-    ExitProcess(1);
-  }
-
-  /////
-
-  return guiThreadInfo.hwndCapture != NULL;
-}
-
 ///// ///// ///// ///// /////
 
 static HANDLE virtualChannel = NULL;
@@ -100,7 +81,10 @@ static DWORD WINAPI WTSVirtualChannelReadLoop(LPVOID lpParam) {
 }
 
 int main() {
-  HANDLE readLoop = CreateThread(NULL, 0, WTSVirtualChannelReadLoop, NULL, 0, NULL);
+  if (!RegisterHotKey(NULL, 0, MOD_WIN | MOD_NOREPEAT, 0x59)) {
+    printf("RegisterHotKey failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+    return 1;
+  }
 
   /////
 
@@ -108,23 +92,9 @@ int main() {
 
   /////
 
-  if (readLoop == NULL) {
-    printf("CreateThread failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-    ExitProcess(1);
-  }
-
-  /////
-
-  while (TRUE) {
-    const BOOL mouseCaptured = IsCaptured();
-
-    /////
-
-    printf("mouseCaptured: %d\n", mouseCaptured);
-
-    /////
-
-    if (mouseCaptured) {
+  MSG msg = {0};
+  while (GetMessage(&msg, NULL, 0, 0) != 0) {
+    if (msg.message == WM_HOTKEY) {
       if (virtualChannel == NULL) {
         HANDLE newVirtualChannel = WTSVirtualChannelOpenEx(WTS_CURRENT_SESSION, AINPUT_DVC_CHANNEL_NAME, WTS_CHANNEL_OPTION_DYNAMIC);
 
@@ -132,22 +102,24 @@ int main() {
 
         if (newVirtualChannel == NULL) {
           printf("WTSVirtualChannelOpenEx failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-          ExitProcess(1);
+          return 1;
         }
 
         /////
 
         if (!WTSVirtualChannelWrite(newVirtualChannel, MESSAGE_AINPUT_VERSION, sizeof(MESSAGE_AINPUT_VERSION), &out)) {
           printf("WTSVirtualChannelWrite failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-          ExitProcess(1);
+          return 1;
         }
 
         /////
 
         virtualChannel = newVirtualChannel;
-      }
-    } else {
-      if (virtualChannel != NULL) {
+
+        /////
+
+        printf("HotKey: Virtual Channel Created\n");
+      } else {
         HANDLE oldVirtualChannel = virtualChannel;
 
         /////
@@ -158,20 +130,15 @@ int main() {
 
         if (!WTSVirtualChannelClose(oldVirtualChannel)) {
           printf("WTSVirtualChannelClose failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-          ExitProcess(1);
+          return 1;
         }
+
+        /////
+
+        printf("HotKey: Virtual Channel Destoyed\n");
       }
     }
-
-    /////
-
-    Sleep(50);
-  }
-
-  /////
-
-  if (!TerminateThread(readLoop, 0)) {
-    printf("TerminateThread failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-    ExitProcess(1);
-  }
+  } 
+ 
+  return 0;
 }
