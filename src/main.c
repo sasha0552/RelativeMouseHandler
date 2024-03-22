@@ -1,11 +1,29 @@
 #include <stdio.h>
+
 #include <Windows.h>
+#include <WinUser.h>
 #include <WtsApi32.h>
 
 #include "ainput.h"
 #include "buffers.h"
 
-static void handle_event(PCHAR Buffer, ULONG BufferSize, ULONG BytesRead, INT32 w, INT32 h) {
+///// ///// ///// ///// /////
+
+// Message: AINPUT_VERSION
+static char MESSAGE_AINPUT_VERSION[] = {
+  // UINT16: MSG_AINPUT_VERSION
+  0x01, 0x00,
+
+  // UINT32: AINPUT_VERSION_MAJOR
+  0x01, 0x00, 0x00, 0x00,
+
+  // UINT32: AINPUT_VERSION_MINOR
+  0x00, 0x00, 0x00, 0x00,
+};
+
+///// ///// ///// ///// /////
+
+static void handle_event(PCHAR Buffer, ULONG BufferSize, ULONG BytesRead) {
   int i = 0;
 
   if (BytesRead != 34) {
@@ -32,63 +50,107 @@ static void handle_event(PCHAR Buffer, ULONG BufferSize, ULONG BytesRead, INT32 
     return;
   }
 
-  ainput_mouse_event(d, e, f, g, w, h);
+  ainput_mouse_event(d, e, f, g);
 }
 
-// Message: AINPUT_VERSION
-char MESSAGE_AINPUT_VERSION[] = {
-  // UINT16: MSG_AINPUT_VERSION
-  0x01, 0x00,
+///// ///// ///// ///// /////
 
-  // UINT32: AINPUT_VERSION_MAJOR
-  0x01, 0x00, 0x00, 0x00,
+static HANDLE virtualChannel = NULL;
 
-  // UINT32: AINPUT_VERSION_MINOR
-  0x00, 0x00, 0x00, 0x00,
-};
-
-int main() {
-  //
-  POINT cursorPos;
-  GetCursorPos(&cursorPos);
-  HMONITOR hMonitor = MonitorFromPoint(cursorPos, MONITOR_DEFAULTTONEAREST);
-  MONITORINFO monitorInfo;
-  monitorInfo.cbSize = sizeof(MONITORINFO);
-  GetMonitorInfo(hMonitor, &monitorInfo);
-  int w = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
-  int h = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
-  //
-
-  //
+static DWORD WINAPI WTSVirtualChannelReadLoop(LPVOID lpParam) {
   char buf[512];
 
-  //
+  /////
+
   ULONG out = 0;
 
-  //
-  void* virtualChannel = WTSVirtualChannelOpenEx(WTS_CURRENT_SESSION, AINPUT_DVC_CHANNEL_NAME, WTS_CHANNEL_OPTION_DYNAMIC);
+  /////
 
-  //
-  if (virtualChannel == NULL) {
-    printf("WTSVirtualChannelOpenEx failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+  while (TRUE) {
+    if (virtualChannel != NULL) {
+      if (!WTSVirtualChannelRead(virtualChannel, INFINITE, buf, sizeof(buf), &out)) {
+        printf("WTSVirtualChannelRead failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+        return 1;
+      }
+
+      /////
+
+      handle_event(buf, sizeof(buf), out);
+    }
+  }
+}
+
+int main() {
+  HANDLE readLoop = CreateThread(NULL, 0, WTSVirtualChannelReadLoop, NULL, 0, NULL);
+
+  /////
+
+  ULONG out = 0;
+
+  /////
+
+  if (readLoop == NULL) {
+    printf("CreateThread failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
     return 1;
   }
 
-  //
-  if (!WTSVirtualChannelWrite(virtualChannel, MESSAGE_AINPUT_VERSION, sizeof(MESSAGE_AINPUT_VERSION), &out)) {
-    printf("WTSVirtualChannelWrite failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-    return 1;
-  }
+  /////
 
-  //
-  while (1) {
-    //
-    if (!WTSVirtualChannelRead(virtualChannel, INFINITE, buf, 512, &out)) {
-      printf("WTSVirtualChannelRead failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
-      return 1;
+  while (TRUE) {
+    const BOOL mouseCaptured = GetCapture() != NULL;
+
+    /////
+
+    printf("mouseCaptured: %d\n", mouseCaptured);
+
+    if (mouseCaptured) {
+      if (virtualChannel == NULL) {
+        HANDLE newVirtualChannel = WTSVirtualChannelOpenEx(WTS_CURRENT_SESSION, AINPUT_DVC_CHANNEL_NAME, WTS_CHANNEL_OPTION_DYNAMIC);
+
+        /////
+
+        if (virtualChannel == NULL) {
+          printf("WTSVirtualChannelOpenEx failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+          return 1;
+        }
+
+        /////
+
+        if (!WTSVirtualChannelWrite(virtualChannel, MESSAGE_AINPUT_VERSION, sizeof(MESSAGE_AINPUT_VERSION), &out)) {
+          printf("WTSVirtualChannelWrite failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+          return 1;
+        }
+
+        /////
+
+        virtualChannel = newVirtualChannel;
+      }
+    } else {
+      if (virtualChannel != NULL) {
+        if (!WTSVirtualChannelClose(virtualChannel)) {
+          printf("WTSVirtualChannelClose failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+          return 1;
+        }
+
+        /////
+
+        virtualChannel = NULL;
+      }
     }
 
-    //
-    handle_event(buf, 512, out, w, h);
+    /////
+
+    Sleep(50);
   }
+
+  /////
+
+  if (!TerminateThread(readLoop, 0)) {
+    printf("TerminateThread failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+    return 1;
+  }
+
+  /////
+
+  return 0;
 }

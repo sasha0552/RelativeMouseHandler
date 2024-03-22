@@ -1,6 +1,6 @@
 #include "ainput.h"
 
-void ainput_mouse_event(UINT64 timestamp, UINT64 flags, INT32 x, INT32 y, INT32 w, INT32 h) {
+void ainput_mouse_event(UINT64 timestamp, UINT64 flags, INT32 x, INT32 y) {
   printf("W M D R H 1 2 3 4 5 | x y\n%d %d %d %d %d %d %d %d %d %d | %d %d\n\n",
     (flags & AINPUT_FLAGS_WHEEL   ) != 0,
     (flags & AINPUT_FLAGS_MOVE    ) != 0,
@@ -35,10 +35,6 @@ void ainput_mouse_event(UINT64 timestamp, UINT64 flags, INT32 x, INT32 y, INT32 
       inputs[0].mi.dwFlags = MOUSEEVENTF_MOVE;
       inputs[0].mi.dx = x;
       inputs[0].mi.dy = y;
-    } else {
-      inputs[0].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
-      inputs[0].mi.dx = MulDiv(x, 65535, w);
-      inputs[0].mi.dy = MulDiv(y, 65535, h);
     }
   } else if (flags & AINPUT_FLAGS_BUTTON1) {
     inputs[0].mi.dwFlags = flags & AINPUT_FLAGS_DOWN ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
