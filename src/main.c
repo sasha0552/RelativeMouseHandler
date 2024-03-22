@@ -77,6 +77,8 @@ static DWORD WINAPI WTSVirtualChannelReadLoop(LPVOID lpParam) {
 
       handle_event(buf, sizeof(buf), out);
     }
+
+    Sleep(1);
   }
 }
 
@@ -84,6 +86,14 @@ int main() {
   if (!RegisterHotKey(NULL, 0, MOD_WIN | MOD_NOREPEAT, 0x59)) {
     printf("RegisterHotKey failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
     return 1;
+  }
+
+  /////
+
+  HANDLE readLoopThread = CreateThread(NULL, 0, WTSVirtualChannelReadLoop, NULL, 0, NULL);
+  if (readLoopThread == NULL) {
+    printf("CreateThread failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+    ExitProcess(1);
   }
 
   /////
@@ -138,7 +148,12 @@ int main() {
         printf("HotKey: Virtual Channel Destoyed\n");
       }
     }
-  } 
- 
+  }
+
+  if (!TerminateThread(readLoopThread, 0)) {
+    printf("TerminateThread failed: 0x%x\n", HRESULT_FROM_WIN32(GetLastError()));
+    ExitProcess(1);
+  }
+
   return 0;
 }
